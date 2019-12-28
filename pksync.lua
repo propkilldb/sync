@@ -457,7 +457,7 @@ hook.Add("PlayerInitialSpawn", "syncplayerspawn", function(ply)
 local of = p.Name
 function p:Name()
 if self:IsBot() then
-local name = self:GetNW2String("name", nil)
+local name = self:GetNW2String("name", false)
 if not name then
 return of(self)
 end
@@ -465,7 +465,9 @@ return name.."/sync"
 end
 return of(self)
 end
-p.Nick = p.Name]])
+p.Nick = p.Name
+p.GetName = p.Name
+]])
 	end
 end)
 
@@ -567,4 +569,5 @@ function pmeta:Name()
 end
 
 pmeta.Nick = pmeta.Name
+pmeta.GetName = pmeta.Name
 
