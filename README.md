@@ -8,6 +8,8 @@ you'll probably need to compile the binary yourself if you're running GNU/Linux 
 
 https://github.com/AlmightyLaxz/gm_bromsock_docker_build
 
+`sudo apt install g++ libc6-dev-i386 g++-multilib libssl-dev:i386 make`
+
 ## Install
 
 put pksync.lua in lua/autorun/server/pksync.lua
