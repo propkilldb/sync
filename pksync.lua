@@ -1,28 +1,14 @@
-require("bromsock")
-
-if client then client:Close() end
-client = BromSock()
-
-if server then server:Close() end
-server = BromSock()
+require("gwsockets")
+if ws then ws:close() end
 
 local funcs = {}
 local dataqueue = {}
 local sendqueue = {}
 local propstosync = {}
 local syncedprops = {}
-local sendbuffer = {}
-local receivebuf = {}
-local flipflop = false
-local g_clientsock
 
-if (not server:Listen(27057)) then
-	print("[BS:S] Failed to listen!")
-else
-	print("[BS:S] Server listening...")
-end
 
-local function generateInitialPacket(packet)
+local function generateInitialPacket()
 	local plys = {}
 	local props = {}
 	for k,v in pairs(player.GetAll()) do
@@ -50,8 +36,7 @@ local function generateInitialPacket(packet)
 		end
 	end
 	
-	packet:WriteString(util.TableToJSON({{addplayers = plys, spawnprops = props}}))
-	return packet
+	return util.TableToJSON({addplayers = plys, spawnprops = props})
 end
 
 local function processFuncs(tbl)
@@ -72,80 +57,34 @@ local function removenil(tbl)
 	end
 end
 
-client:SetCallbackConnect(function(sock, ret, ip, port)
-	if (not ret) then
-		print("[BS:C] Failed to connect to: ", ret, ip, port)
-		return
+//aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+//local ticks = 0
+
+function wshooks()
+	function ws:onMessage(data)
+		processFuncs(util.JSONToTable(data))
+		//ticks = ticks + 1
 	end
 	
-	if sock:SetOption(0x6, 0x0001, 1) == -1 then
-		print("[BS:S] Setting flags failed")
+	/*timer.Remove("tickcounter", 1, 0, function()
+		print("ticks:", ticks)
+		ticks = 0
+	end)*/
+
+	function ws:onError(errMessage)
+		print("websocket error???????", errMessage)
 	end
 
-	print("[BS:C] Connected to server:", sock, ret, ip, port)
-	
-	sendqueue = {} //empty the old data from the queue since the hooks are running since server start
-	
-	local packet = BromPacket(client)
-	packet = generateInitialPacket(packet)
-	client:Send(packet)
-	
-	client:Receive()
-end)
-
-client:SetCallbackReceive(function(sock, packet)
-	//print("[BS:C] Received:", sock, packet, packet and packet:InSize() or -1)
-	//print("[BS:C] R_Str:", packet:ReadString())
-
-	local data = util.JSONToTable(packet:ReadString())
-	table.Add(receivebuf, data)
-	
-	client:Receive()
-end)
-
-client:SetCallbackDisconnect(function(sock)
-	print("[BS:S] Disconnected:", sock)
-	for k,v in pairs(player.GetBots()) do
-		if v.SyncedPlayer then
-			v:Kick()
-		end
-	end
-	for k,v in pairs(syncedprops) do
-		if IsValid(v) then
-			v:Remove()
-			v = nil
-		end
-	end
-end)
-
-server:SetCallbackAccept(function(serversock, clientsock)
-	print("[BS:S] Accepted:", serversock, clientsock)
-	g_clientsock = clientsock
-	// empty sendqueue to not send dated shit
-	sendqueue = {}
-	
-	
-	if clientsock:SetOption(0x6, 0x0001, 1) == -1 then
-		print("[BS:S] Setting flags failed2")
-	end	
-
-	
-	//send initial update packet
-	local packet = BromPacket(clientsock)
-	packet = generateInitialPacket(packet)
-	clientsock:Send(packet)
-	
-	clientsock:SetCallbackReceive(function(sock, packet)
-		//print("[BS:S] R_Num:", packet:ReadString())
-
-		local data = util.JSONToTable(packet:ReadString())
-		table.Add(receivebuf, data)
+	function ws:onConnected()
+		print("sync connected")
 		
-		sock:Receive()
-	end)
+		sendqueue = {} //empty the old data from the queue since the hooks are running since server start
+		ws:write(generateInitialPacket())
+	end
 	
-	clientsock:SetCallbackDisconnect(function(sock)
-		print("[BS:S] Disconnected:", sock)
+	function ws:onDisconnected()
+		print("goodbye sync")
 		for k,v in pairs(player.GetBots()) do
 			if v.SyncedPlayer then
 				v:Kick()
@@ -154,68 +93,41 @@ server:SetCallbackAccept(function(serversock, clientsock)
 		for k,v in pairs(syncedprops) do
 			if IsValid(v) then
 				v:Remove()
+				v = nil
 			end
 		end
-	end)
-	
-	clientsock:SetTimeout(5000)
-	clientsock:Receive()
-	serversock:Accept()
-end)
+	end
+end
 
-server:Accept()
+//aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 hook.Add("Think", "testshitfuckcunt", function()
-	if flipflop then
-		table.Add(sendbuffer, {sendqueue})
-		local packet = BromPacket()
-		packet:WriteString(util.TableToJSON(sendbuffer))
-		local packet2 = packet:Copy()
-		
-		client:Send(packet)
-		if g_clientsock then
-			g_clientsock:Send(packet2)
-		end
-		sendbuffer = {}
-	else
-		table.Add(sendbuffer, {sendqueue})
-	end
+	if not ws then return end
+	if not ws:isConnected() then return end
+	
+	ws:write(util.TableToJSON(sendqueue))
 	
 	sendqueue = {}
-	flipflop = !flipflop
-	
-	
-	
-	if #receivebuf > 3 then
-		for i=1, #receivebuf - 1 do
-			if not receivebuf[i] then continue end
-			
-			processFuncs(receivebuf[i])
-			receivebuf[i] = nil
-		end
-	else
-		if receivebuf[1] != nil then 
-			processFuncs(receivebuf[1])
-			receivebuf[1] = nil
-		end
-	end
-
-	removenil(receivebuf)
 end)
+
 
 concommand.Add("sync_connect", function(ply, cmd, args)
 	if not args[1] and IsValid(ply) then
 		ply:PrintMessage(HUD_PRINTCONSOLE, "No IP given.")
-		ply:PrintMessage(HUD_PRINTCONSOLE, "	Usage: sync_connect ip:port")
-		ply:PrintMessage(HUD_PRINTCONSOLE, "	dedi.icedd.coffee:27057 (AU), eu.icedd.coffee:27057 (EU), la.icedd.coffee:27057 (LA)")
+		ply:PrintMessage(HUD_PRINTCONSOLE, "Usage: sync_connect ip:port")
 		return
 	end
 	sendqueue = {}
-	client:Connect(args[1], tonumber(args[3] or 27057))
+	
+	if ws then ws:closeNow() end
+	ws = GWSockets.createWebSocket("ws://" .. args[1] .. ":" .. (args[3] or 27057))
+	wshooks()
+	ws:open()
+	
 end)
 
 concommand.Add("sync_disconnect", function()
-	client:Disconnect()
+	ws:closeNow()
 end)
 
 function GetPlayerByCreationID(id)
@@ -298,9 +210,7 @@ end
 
 funcs.playerupdate = function(data)
 	for k,v in pairs(data) do
-		if dataqueue[k] then
-			dataqueue[k] = v
-		end
+		dataqueue[k] = v
 	end
 end
 
@@ -401,12 +311,18 @@ end
 hook.Add("SetupMove", "setsyncedbotpositions", function(ply, mv, cmd)
 	if ply.SyncedPlayer and dataqueue[ply.SyncedPlayer] then
 		local data = dataqueue[ply.SyncedPlayer]
+		ply.eyeAngles = Angle(data.ang)
 		mv:SetOrigin(data.pos)
-		ply:SetEyeAngles(Angle(data.ang))
+		cmd:SetViewAngles(ply.eyeAngles)
 		mv:SetVelocity(data.vel)
 		mv:SetForwardSpeed(data.fws or 0)
 		mv:SetSideSpeed(data.sis or 0)
 		mv:SetUpSpeed(data.ups or 0)
+		dataqueue[ply.SyncedPlayer] = nil
+	end
+	if ply.SyncedPlayer then
+		// need to keep setting eye angles even when theres no update otherwise the bot overrides
+		ply:SetEyeAngles(ply.eyeAngles or Angle())
 	end
 end)
 
@@ -449,7 +365,8 @@ hook.Add("PlayerInitialSpawn", "syncplayerspawn", function(ply)
 			steamid = ply:SteamID(),
 			pos = ply:GetPos(),
 			ang = ply:GetAngles(),
-			vel = ply:GetVelocity()
+			vel = ply:GetVelocity(),
+			alive = ply:Alive()
 		}
 		
 		// dis be ugly af but fuk making entire script shared for 1 function

@@ -2,19 +2,13 @@
 
 ## Requirements
 
-https://github.com/Bromvlieg/gm_bromsock
-
-you'll probably need to compile the binary yourself if you're running GNU/Linux for which you can use the following:
-
-https://github.com/AlmightyLaxz/gm_bromsock_docker_build
-
-`sudo apt install g++ libc6-dev-i386 g++-multilib libssl-dev:i386 make`
+https://github.com/FredyH/GWSockets
 
 ## Install
 
 put pksync.lua in lua/autorun/server/pksync.lua
 
-and bromsock in lua/bin/gmsv_bromsock_linux.dll
+and bromsock in lua/bin/gmsv_gwsockets_linux.dll
 
 ## Usage
 
@@ -24,8 +18,10 @@ sync_connect 123.123.123.123
 
 must be at least 1 player on each server
 
+bot_zombie 1 on all servers to prevent bots glitching around
+
 ## Troubleshooting
 
-"Couldn't include file 'includes/modules/bromsock.lua' (File not found)" means you fucked up or need to recompile it
+"Couldn't include file 'includes/modules/bromsock.lua' (File not found)" means you probably didnt install gwsockets right
 
 also this code is trash so gl debugging it when it inevitably breaks
