@@ -1,11 +1,10 @@
 require("gwsockets")
-if ws then ws:close() end
 
 local funcs = {}
-local dataqueue = {}
-local sendqueue = {}
-local propstosync = {}
-local syncedprops = {}
+local dataqueue = dataqueue or {}
+local sendqueue = sendqueue or {}
+local propstosync = propstosync or {}
+local syncedprops = syncedprops or {}
 
 
 local function generateInitialPacket()
@@ -114,7 +113,8 @@ end)
 concommand.Add("sync_connect", function(ply, cmd, args)
 	if not args[1] and IsValid(ply) then
 		ply:PrintMessage(HUD_PRINTCONSOLE, "No IP given.")
-		ply:PrintMessage(HUD_PRINTCONSOLE, "Usage: sync_connect ip:port")
+		ply:PrintMessage(HUD_PRINTCONSOLE, "	Usage: sync_connect ip:port")
+		ply:PrintMessage(HUD_PRINTCONSOLE, "	dedi.icedd.coffee:27057 (AU), eu.icedd.coffee:27057 (EU), la.icedd.coffee:27057 (LA)")
 		return
 	end
 	sendqueue = {}
@@ -168,23 +168,19 @@ end
 
 funcs.addplayers = function(data)
 	for k,v in pairs(data) do
-		RunConsoleCommand("bot")
-		timer.Simple(1, function()
-			for k2,v2 in pairs(player.GetBots()) do
-				if not v2.SyncedPlayer then
-					v2.SyncedPlayer = k
-					dataqueue[k] = v
-					v2:SelectWeapon("weapon_physgun")
-					v2:SetWeaponColor(Vector(1,0,0))
-					v2:SetNW2String("name", v.name)
-					
-					if v2:Alive() and !v.alive then
-						v2:KillSilent()
-					end
-					break
-				end
+		local v2 = player.CreateNextBot(v.name .. "/sync")
+		if not IsValid(v2) then continue end
+		if not v2.SyncedPlayer then
+			v2.SyncedPlayer = k
+			dataqueue[k] = v
+			v2:SelectWeapon("weapon_physgun")
+			v2:SetWeaponColor(Vector(1,0,0))
+			v2:SetNW2String("name", v.name)
+
+			if v2:Alive() and !v.alive then
+				v2:KillSilent()
 			end
-		end)
+		end
 	end
 end
 
@@ -300,13 +296,26 @@ end
 
 funcs.chatmessage = function(data)
 	for k,v in pairs(data) do
-		for k2,v2 in pairs(player.GetAll()) do
-			v2:ChatPrint(v)
+		// temp old chat
+		if type(v) == "string"  then
+			for k2,v2 in pairs(player.GetAll()) do
+				v2:ChatPrint(v)
+			end
+			return
 		end
+		//
+		GetBotByCreationID(v[1]):Say(v[2])
 	end
 end
 
 // sync hooks
+
+hook.Add("StartCommand","setbotbuttons",function(ply,cmd)
+	if ply.SyncedPlayer then
+		cmd:SetButtons(ply.CurrentButtons or 0)
+	end
+
+end)
 
 hook.Add("SetupMove", "setsyncedbotpositions", function(ply, mv, cmd)
 	if ply.SyncedPlayer and dataqueue[ply.SyncedPlayer] then
@@ -318,6 +327,7 @@ hook.Add("SetupMove", "setsyncedbotpositions", function(ply, mv, cmd)
 		mv:SetForwardSpeed(data.fws or 0)
 		mv:SetSideSpeed(data.sis or 0)
 		mv:SetUpSpeed(data.ups or 0)
+		ply.CurrentButtons = data.buttons or mv:GetButtons()
 		dataqueue[ply.SyncedPlayer] = nil
 	end
 	if ply.SyncedPlayer then
@@ -336,7 +346,8 @@ hook.Add("PlayerTick", "queueplayerpositions", function(ply, mv, cmd)
 			vel = mv:GetVelocity(),
 			fws = mv:GetForwardSpeed(),
 			sis = mv:GetSideSpeed(),
-			ups = mv:GetUpSpeed()
+			ups = mv:GetUpSpeed(),
+			buttons = mv:GetButtons(),
 		}
 	end
 end)
@@ -369,22 +380,6 @@ hook.Add("PlayerInitialSpawn", "syncplayerspawn", function(ply)
 			alive = ply:Alive()
 		}
 		
-		// dis be ugly af but fuk making entire script shared for 1 function
-		ply:SendLua([[local p = FindMetaTable("Player")
-local of = p.Name
-function p:Name()
-if self:IsBot() then
-local name = self:GetNW2String("name", false)
-if not name then
-return of(self)
-end
-return name.."/sync"
-end
-return of(self)
-end
-p.Nick = p.Name
-p.GetName = p.Name
-]])
 	end
 end)
 
@@ -424,9 +419,10 @@ hook.Add("EntityRemoved", "syncpropremove", function(ent)
 end)
 
 hook.Add("PlayerSay", "syncchat", function(ply, msg)
+	if ply:IsBot() then return end
 	if not sendqueue["chatmessage"] then sendqueue["chatmessage"] = {} end
 	
-	table.insert(sendqueue["chatmessage"], ply:Name() .. ": " .. msg)
+	table.insert(sendqueue["chatmessage"], {ply:GetCreationID(), msg})
 end)
 
 hook.Add("PlayerDeath", "syncplayerdeath", function(vic, inf, att)
@@ -469,22 +465,3 @@ hook.Add("EntityTakeDamage", "1800 STOP DYING", function(ent, dmg)
 		return true
 	end
 end)
-
-local pmeta = FindMetaTable("Player")
-if originalNameFunc then return end
-originalNameFunc = pmeta.Name
-
-function pmeta:Name()
-	if self:IsBot() and self.SyncedPlayer then
-		local name = self:GetNW2String("name", nil)
-		if not name then
-			return originalNameFunc(self)
-		end
-		return name .. "/sync"
-	end
-	return originalNameFunc(self)
-end
-
-pmeta.Nick = pmeta.Name
-pmeta.GetName = pmeta.Name
-
